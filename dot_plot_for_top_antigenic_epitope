@@ -1,0 +1,89 @@
+# ======= Install Required Packages =======
+packages <- c("ggplot2", "dplyr", "readxl", "tidyverse")
+installed_packages <- rownames(installed.packages())
+
+for (p in packages) {
+  if (!(p %in% installed_packages)) {
+    install.packages(p, repos = "http://cran.r-project.org")
+  }
+}
+
+# Load Libraries
+library(ggplot2)
+library(dplyr)
+library(readxl)
+library(tidyverse)
+
+# ======= Load Excel Files =======
+b_cell <- read_excel("/Users/Ahmet/Desktop_2/B_cell_epitopes.xlsx") %>%
+  rename(Epitope = `B-cell Epitope`, Species = `Species`) %>%
+  mutate(Type = "B-cell")
+
+mhc_i <- read_excel("/Users/Ahmet/Desktop_2/MHC_I_epitopes.xlsx") %>%
+  rename(Species = `Species`) %>%
+  mutate(Type = "MHC-I")
+
+mhc_ii <- read_excel("/Users/Ahmet/Desktop_2/MHC_II_epitopes.xlsx") %>%
+  rename(Species = `Species`) %>%
+  mutate(Type = "MHC-II")
+
+# ======= Combine Data =======
+combined_data <- bind_rows(
+  b_cell %>% select(Epitope, Species, Antigenicity, Type),
+  mhc_i %>% select(Epitope, Species, Antigenicity, Type),
+  mhc_ii %>% select(Epitope, Species, Antigenicity, Type)
+) %>%
+  distinct()
+
+# ======= Identify Most Antigenic Epitope for Each Type & Species =======
+most_antigenic <- combined_data %>%
+  group_by(Type, Species) %>%
+  filter(Antigenicity == max(Antigenicity)) %>%
+  ungroup()
+
+# ======= Assign Colors for Plot =======
+combined_data <- combined_data %>%
+  mutate(
+    Highlight = case_when(
+      Epitope %in% most_antigenic$Epitope & Type == "B-cell" ~ "The most antigenic B-cell",
+      Epitope %in% most_antigenic$Epitope & Type == "MHC-I" ~ "The most antigenic MHC-I",
+      Epitope %in% most_antigenic$Epitope & Type == "MHC-II" ~ "The most antigenic MHC-II",
+      TRUE ~ "Others"
+    ),
+    EpitopeLabel = paste(Epitope, "(", Species, ")")  # Keep all epitope sequences on Y-axis
+  )
+
+# ======= Define Color Mapping for the Plot =======
+color_mapping <- c("The most antigenic B-cell" = "#E41A1C",  # Red
+                   "The most antigenic MHC-I" = "#006400",  # Dark Green
+                   "The most antigenic MHC-II" = "#B8860B",  # Dark Yellow
+                   "Others" = "black")  # Others = black dots for non-top epitopes
+
+# ======= Ensure Y-axis Has All Epitope Labels =======
+all_epitopes <- unique(combined_data$EpitopeLabel)  # Store all epitope labels
+
+# ======= Filter Data for Labeling (Only Show Antigenicity on Top Epitopes) =======
+label_data <- combined_data %>% filter(Highlight != "Others")
+
+# ======= Save Wider & Moderate Tall Dot Plot =======
+jpeg("/Users/Ahmet/Desktop_2/epitope_antigenicity.jpeg", width = 1100, height = 1600)
+
+ggplot(combined_data, aes(x = Type, y = factor(EpitopeLabel, levels = rev(all_epitopes)), 
+                          color = Highlight, size = Antigenicity)) +
+  geom_point(alpha = 0.7) +  # Plot all epitopes, color most antigenic
+  geom_text(data = label_data, aes(label = format(Antigenicity, scientific = FALSE)),  # Full antigenicity value
+            hjust = -0.3, vjust = 0.5, size = 5, fontface = "bold") +  # Properly position labels
+  scale_color_manual(values = color_mapping) +  
+  theme_minimal(base_size = 16) +
+  labs(title = "Most Antigenic Epitopes by Type",
+       x = "Epitope Type",
+       y = "Epitope Sequence (with Species)",
+       color = "Epitope Category",
+       size = "Antigenicity Score") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 14),  # Adjust for readability
+        axis.text.y = element_text(size = 12),  # Increase font size for epitope sequences
+        legend.position = "right")  # Keep legend aligned
+
+dev.off()
+
+print("Final optimized dot plot saved successfully in /Users/Ahmet/Desktop_2/")
